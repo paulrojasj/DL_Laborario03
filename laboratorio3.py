@@ -10,7 +10,7 @@ Original file is located at
 !pip install openai-whisper # NO whisper
 !pip install jiwer
 !pip -q install transformers accelerate sentencepiece
-!pip install coqui-tts # NO tts
+!pip install coqui-tts  # usar coqui-tts (no el paquete "tts")
 
 """#  Grabar audio"""
 
@@ -24,62 +24,50 @@ def record(out_webm=None, out_wav=None, sr=16000, autoplay=False):
     if out_webm is None:
         out_webm = f"/content/rec_{uuid.uuid4().hex}.webm"
     if out_wav is None:
-        out_wav  = f"/content/rec_{uuid.uuid4().hex}.wav"
+        out_wav = f"/content/rec_{uuid.uuid4().hex}.wav"
 
     js = Javascript(r"""
-    async function recorderUI(){
-      // Contenedor visual
-      const box = document.createElement('div');
-      box.style.padding = '12px';
-      box.style.margin = '8px 0';
-      box.style.border = '1px solid #ddd';
-      box.style.borderRadius = '10px';
-      box.style.display = 'inline-flex';
-      box.style.gap = '8px';
-      box.style.alignItems = 'center';
-      box.style.fontFamily = 'sans-serif';
+    async function recorderUIOnce(){
+      const existing = document.getElementById('recorder-box');
+      if (existing) { existing.remove(); }
 
-      const recDot = document.createElement('span');
-      recDot.style.width = '10px';
-      recDot.style.height = '10px';
-      recDot.style.borderRadius = '50%';
-      recDot.style.background = '#bbb';
+      const box = document.createElement('div');
+      box.id = 'recorder-box';
+      box.style.cssText = 'padding:12px;margin:8px 0;border:1px solid #ddd;border-radius:10px;display:inline-flex;gap:8px;align-items:center;font-family:sans-serif';
+
+      const dot = document.createElement('span');
+      dot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:#bbb';
+
+      const startBtn = document.createElement('button');
+      startBtn.textContent = 'Grabar';
+      startBtn.style.cssText = 'padding:6px 10px';
+
+      const stopBtn = document.createElement('button');
+      stopBtn.textContent = 'Parar';
+      stopBtn.style.cssText = 'padding:6px 10px';
+      stopBtn.disabled = true;
 
       const msg = document.createElement('span');
       msg.textContent = 'Listo para grabar';
       msg.style.minWidth = '180px';
 
-      const btnStart = document.createElement('button');
-      btnStart.textContent = 'Grabar';
-      btnStart.style.padding = '6px 10px';
-
-      const btnStop = document.createElement('button');
-      btnStop.textContent = 'Parar';
-      btnStop.style.padding = '6px 10px';
-      btnStop.disabled = true;
-
-      box.appendChild(recDot);
-      box.appendChild(btnStart);
-      box.appendChild(btnStop);
-      box.appendChild(msg);
+      box.append(dot, startBtn, stopBtn, msg);
       document.body.appendChild(box);
 
-      let stream = null;
-      let rec = null;
-      let chunks = [];
+      let stream, rec, chunks = [];
 
-      function setRecording(on){
-        recDot.style.background = on ? '#e74c3c' : '#bbb';
-        msg.textContent = on ? 'Grabando...' : 'Listo para grabar';
-        btnStart.disabled = on;
-        btnStop.disabled  = !on;
+      function setRec(on){
+        dot.style.background = on ? '#e74c3c' : '#bbb';
+        startBtn.disabled = on;
+        stopBtn.disabled = !on;
+        msg.textContent = on ? 'Grabando…' : 'Listo para grabar';
       }
 
       return await new Promise(async (resolve, reject) => {
-        try{
-          stream = await navigator.mediaDevices.getUserMedia({audio:true});
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ audio:true });
           rec = new MediaRecorder(stream);
-        }catch(err){
+        } catch (err) {
           box.remove();
           reject('No se pudo acceder al micrófono: ' + err);
           return;
@@ -88,33 +76,38 @@ def record(out_webm=None, out_wav=None, sr=16000, autoplay=False):
         rec.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
 
         rec.onstop = async () => {
-          try{
+          try {
             const blob = new Blob(chunks, {type:'audio/webm;codecs=opus'});
             const buf = await blob.arrayBuffer();
             const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
             stream.getTracks().forEach(t => t.stop());
             box.remove();
             resolve(b64);
-          }catch(err){
+          } catch (err) {
             stream.getTracks().forEach(t => t.stop());
             box.remove();
             reject(err);
           }
         };
 
-        btnStart.onclick = () => { chunks = []; rec.start(); setRecording(true); };
-        btnStop.onclick  = () => { if(rec && rec.state === 'recording'){ rec.stop(); setRecording(false); } };
+        startBtn.onclick = () => { chunks = []; rec.start(); setRec(true); };
+        stopBtn.onclick = () => {
+          if (rec && rec.state === 'recording') {
+            rec.stop();
+            setRec(false);
+          }
+        };
       });
     }
     """)
     display(js)
 
-    b64 = output.eval_js("recorderUI()")
+    b64 = output.eval_js("recorderUIOnce()")
     with open(out_webm, "wb") as f:
-      f.write(base64.b64decode(b64))
+        f.write(base64.b64decode(b64))
 
     subprocess.run([
-        "ffmpeg","-y","-i",out_webm,"-ac","1","-ar",str(sr),out_wav
+        "ffmpeg", "-y", "-i", out_webm, "-ac", "1", "-ar", str(sr), out_wav
     ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     try:
@@ -178,7 +171,7 @@ tts.tts_to_file(
     text=resp,
     # speaker_wav="ref_voice.wav",    # tu audio de referencia (5–10 s)
                                       # procura que sea audio de calidad
-    speaker = 'Claribel Dervla',
+    speaker='Claribel Dervla',
     language="es",
     file_path="respuesta.wav"
 )
